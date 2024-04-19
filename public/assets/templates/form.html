@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <title>Loan Calculator Form</title>
+    <link rel="stylesheet" href="./assets/css/styles.css">
+  </head>
+  <body>
+    <article>
+      <h1>Loan Calculator</h1>
+      <form action="/loan-offer" method="post">
+        <p>All loans are offered at an APR of {{apr}}%</p>
+        <label for="amount">How much do you want to borrow (in dollars)?</label>
+        <input type="number" name="amount" id="amount" value="" required>
+        <label for="duration">How much time do you want to pay back your loan?</label>
+        <input type="number" name="duration" id="duration" value="" required>
+        <input type="submit" name="" value="Get loan offer!">
+      </form>
+    </article>
+  </body>
+</html>
