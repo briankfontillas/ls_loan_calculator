@@ -1,9 +1,18 @@
 const HTTP = require("http");
 const URL = require("url").URL;
 const HANDLEBARS = require("handlebars");
-const { loadavg } = require("os");
+const FS = require('fs');
+const QUERYSTRING = require('querystring');
+const PATH = require('path');
 const PORT = 3000;
 const APR = 5;
+const MIME_TYPES = {
+  '.css': 'text/css',
+  '.js': 'application/javascript',
+  '.jpg': 'image/jpeg',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon'
+};
 
 const FORM_PAGE = 
 `
@@ -12,59 +21,12 @@ const FORM_PAGE =
   <head>
     <meta charset="utf-8">
     <title>Loan Calculator Form</title>
-    <style type="text/css">
-      body {
-        background: rgba(250, 250, 250);
-        font-family: sans-serif;
-        color: rgb(50, 50, 50);
-      }
-
-      article {
-        width: 100%;
-        max-width: 40rem;
-        margin: 0 auto;
-        padding: 1rem 2rem;
-      }
-
-      h1 {
-        font-size: 2.5rem;
-        text-align: center;
-      }
-
-      form, input {
-        font-size: 1.5rem;
-      }
-      form p {
-        text-align: center;
-      }
-      label, input {
-        display: block;
-        width: 100%;
-        padding: 0.5rem;
-        margin-top: 0.5rem;
-      }
-      input[type="number"] {
-        border-radius: 0.3rem;
-        border: 1px solid #cecece;
-      }
-      input[type="submit"] {
-        width: auto;
-        margin: 1rem auto;
-        cursor: pointer;
-        color: #fff;
-        background-color: #01d28e;
-        border: none;
-        border-radius: 0.3rem;
-      }
-      input[type="submit"]:hover {
-        background-color: #00a870;
-      }
-    </style>
+    <link rel="stylesheet" href="./assets/css/styles.css">
   </head>
   <body>
     <article>
       <h1>Loan Calculator</h1>
-      <form action="/loan-offer" method="get">
+      <form action="/loan-offer" method="post">
         <p>All loans are offered at an APR of {{apr}}%</p>
         <label for="amount">How much do you want to borrow (in dollars)?</label>
         <input type="number" name="amount" id="amount" value="" required>
@@ -84,38 +46,7 @@ const LOAN_PAGE =
   <head>
     <meta charset="utf-8">
     <title>Loan Calculator</title>
-    <style type="text/css">
-      body {
-        background: rgba(250, 250, 250);
-        font-family: sans-serif;
-        color: rgb(50, 50, 50);
-      }
-
-      article {
-        width: 100%;
-        max-width: 40rem;
-        margin: 0 auto;
-        padding: 1rem 2rem;
-      }
-
-      h1 {
-        font-size: 2.5rem;
-        text-align: center;
-      }
-
-      table {
-        font-size: 1.5rem;;
-      }
-      th {
-        text-align: right;
-      }
-      td {
-        text-align: center;
-      }
-      th, td {
-        padding: 0.5rem;
-      }
-    </style>
+    <link rel="stylesheet" href="./assets/css/styles.css">
   </head>
   <body>
     <article>
@@ -169,9 +100,28 @@ function render(template, data) {
   return html;
 }
 
+function parseFormData(request, callback) {
+  let body = '';
+  request.on('data', chunk => {
+    body += chunk.toString();
+  });
+  request.on('end', () => {
+    let data = QUERYSTRING.parse(body);
+    data.amount = Number(data.amount);
+    data.duration = Number(data.duration);
+    callback(data);
+  });
+}
+
 function getParams(path) {
   const myURL = new URL(path, `http://localhost:${PORT}`);
-  return myURL.searchParams;
+  let searchParams = myURL.searchParams;
+  let data = {};
+
+  data.amount = Number(searchParams.get('amount'));
+  data.duration = Number(searchParams.get('duration'));
+
+  return data;
 }
 
 function getPathname(path) {
@@ -190,13 +140,9 @@ function calculateLoan(amount, duration, apr) {
   return payment.toFixed(2);
 }
 
-function calculateLoanOffer(params) {
-  let data = {};
-
-  data.amount = Number(params.get('amount'));
+function createLoanOffer(data) {
   data.amountIncrement = data.amount + 100;
   data.amountDecrement = data.amount - 100;
-  data.duration = Number(params.get('duration'));
   data.durationIncrement = data.duration + 1;
   data.durationDecrement = data.duration - 1;
   data.apr = APR;
@@ -208,26 +154,47 @@ function calculateLoanOffer(params) {
 SERVER = HTTP.createServer((req, res) => {
   let path = req.url;
   let pathname = getPathname(path);
+  let fileExtension = PATH.extname(pathname);
 
-  if (pathname === '/') {
-    let content = render(FORM_TEMPLATE, {apr: APR});
+  FS.readFile(`./public/${pathname}`, (err, data) => {
+    if (data) {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', `${MIME_TYPES[fileExtension]}`);
+      res.write(`${data}\n`);
+      res.end();
+    } else {
+      let method = req.method;
+      if (method === 'GET' && pathname === '/') {
+        let content = render(FORM_TEMPLATE, {apr: APR});
+    
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/html');
+        res.write(`${content}\n`);
+        res.end();
+      } else if (method === 'GET' && pathname === '/loan-offer') {
+        let data = createLoanOffer(getParams(path));
+        let content = render(LOAN_TEMPLATE, data);
+    
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/html');
+        res.write(`${content}\n`);
+        res.end();
+      } else if (method === 'POST' && pathname === '/loan-offer') {
+        parseFormData(req, parsedData => {
+          let data = createLoanOffer(parsedData);
+          let content = render(LOAN_TEMPLATE, data);
 
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'text/html');
-    res.write(`${content}\n`);
-    res.end();
-  } else if (pathname === '/loan-offer') {
-    let data = calculateLoanOffer(getParams(path));
-    let content = render(LOAN_TEMPLATE, data);
-
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'text/html');
-    res.write(`${content}\n`);
-    res.end();
-  } else {
-    res.statusCode = 404;
-    res.end();
-  }
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'text/html');
+          res.write(`${content}\n`);
+          res.end();
+        });
+      } else {
+        res.statusCode = 404;
+        res.end();
+      }
+    }
+  })
 });
 
 SERVER.listen(PORT, () => {
